@@ -1,0 +1,78 @@
+---
+- hosts: all
+  become: yes
+  become_method: sudo
+  handlers:
+  - name: restart apache
+    service:
+      name: httpd
+      state: restarted
+  - name: restart logstash
+    service:
+      name: logstash
+      state: restarted
+  tasks:
+  - name: install elastic repo
+    yum_repository:
+      name: elasticsearch
+      description: Elasticsearch repository for 5.x packages
+      baseurl: https://artifacts.elastic.co/packages/5.x/yum
+      gpgcheck: yes
+      gpgkey: https://artifacts.elastic.co/GPG-KEY-elasticsearch
+      enabled: yes
+  - name: install packages
+    yum:
+      package: "{{ item }}"
+      state: present
+    with_items:
+      - java-1.8.0-openjdk
+      - elasticsearch
+      - kibana
+      - logstash
+      - httpd
+  - name: enable services
+    service:
+      name: "{{ item }}"
+      enabled: yes
+      state: started
+    with_items:
+      - httpd
+      - elasticsearch
+      - logstash
+      - kibana
+  - name: apache config
+    copy:
+      src: files/kibana.conf
+      dest: /etc/httpd/conf.d/vhosts.conf
+    notify:
+      - restart apache
+  - name: apache log access
+    file:
+      dest: /var/log/httpd
+      state: directory
+      mode: 0665
+      recurse: yes
+  - name: logstash config
+    copy:
+      src: files/logstash.conf
+      dest: /etc/logstash/conf.d/logstash.conf
+    notify:
+      - restart logstash
+  - name: apache log file exists
+    stat: 
+      path: /var/log/httpd/kibana_access_log
+    register: apache_log
+  - name: apache log file update
+    file:
+      dest: /var/log/httpd/kibana_access_log
+      state: file
+      mode: 0665
+    when: apache_log.stat.exists is defined and apache_log.stat.exists
+  - name: apache log file create
+    file:
+      dest: /var/log/httpd/kibana_access_log
+      state: touch
+      content: ''
+      mode: 0665
+    when: apache_log.stat.exists is defined and apache_log.stat.exists == False
+
